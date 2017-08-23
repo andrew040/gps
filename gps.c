@@ -6,7 +6,7 @@
 #include <fcntl.h>			//Used for UART
 #include <termios.h>		//Used for UART
 
-
+// nu heb ik dit toegevoegd
 char *strdup(const char *src)
 {
     char *tmp = malloc(strlen(src) + 1);
