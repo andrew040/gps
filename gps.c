@@ -56,7 +56,7 @@ void explode(const char *src, const char *tokens, char ***list, size_t *len)
     }
 
 
-free_and_exit:
+    free_and_exit:
     *list = _list;
     free(copy);
 }
@@ -66,6 +66,7 @@ free_and_exit:
 int main (void)
 {
 	int uart0_filestream = -1;
+	int datatowrite = 0;
 	close(uart0_filestream);
 	uart0_filestream = open("/dev/ttyAMA0", O_RDONLY | O_NOCTTY | O_NDELAY);		//Open in non blocking read/write mode
 	if (uart0_filestream == -1)
@@ -86,64 +87,103 @@ int main (void)
 
 
 	while(1){
-	if (uart0_filestream != -1)
-	{
-		char rx_buffer[256];  				//Complete NMEA string
-		char *match;          				//if GPRMC is found in NMEA string, this is non zero.
-		char posfix[] = "A";  				//Position valid string to compare against.
-		int rx_length = read(uart0_filestream, (void*)rx_buffer, 255);
-
-		FILE * fp;
-
-		if (rx_length < 0)
+		if (uart0_filestream != -1)
 		{
-			//Error
-		}
-		else if (rx_length == 0)
-		{
-			//printf(" no data waiting\n");//No data waiting
-		}
-		else
-		{
-			//Bytes received, terminate string with null
-			rx_buffer[rx_length] = '\0';
-			match = strstr (rx_buffer,"GPRMC");
-			if(match){
-				char **list;
-				size_t i, len;
-				explode(rx_buffer, ",", &list, &len);
+			char rx_buffer[256];  				//Complete NMEA string
+			char *match;          				//if GPRMC is found in NMEA string, this is non zero.
+			char posfix[] = "A";  				//Position valid string to compare against.
+			char date[6], time[10], lat[10], lon[10], spd[8], northsouth[1], eastwest[1], valid[1];
+			char alt[5], hdop[5], numsat[2];
 
-				/*
-				0: $GPRMC
-				1: 115206.000
-				2: A
-				3: 5127.9049
-				4: N
-				5: 00528.6147
-				6: E
-				7: 0.00
-				8: 78.93
-				9: 190817
-				10: A*52
-				*/
+			int rx_length = read(uart0_filestream, (void*)rx_buffer, 255);
 
-				if(!strcmp(list[2],posfix)){
-					fp = fopen ("file.txt", "a");
-					printf("DTG:%s/%sZ*POS:%s%s %s%s*SPD:%s\n",list[9],list[1],list[4],list[3],list[6],list[5],list[7]);
-					fprintf(fp,"%s;%s;%s;%s;%s;%s;%s\r\n",list[9],list[1],list[4],list[3],list[6],list[5],list[7]);
-					fclose(fp);
-				} else{
-					printf("POSITION INVALID\n");
+			FILE * fp;
+
+			if (rx_length < 0)
+			{
+				//Error
+			}
+			else if (rx_length == 0)
+			{
+				//printf(" no data waiting\n");//No data waiting
+			}
+			else
+			{
+				//Bytes received, terminate string with null
+				rx_buffer[rx_length] = '\0';
+//				printf("i:%i - %s",datatowrite, rx_buffer);
+				match = strstr (rx_buffer,"GPRMC");
+				if(match){
+					char **list;
+					size_t i, len;
+					datatowrite++;
+					explode(rx_buffer, ",", &list, &len);
+
+					/*
+					0: $GPRMC
+					1: 115206.000
+					2: A
+					3: 5127.9049
+					4: N
+					5: 00528.6147
+					6: E
+					7: 0.00
+					8: 78.93
+					9: 190817
+					10: A*52
+					*/
+
+					strcpy(time, list[1]);
+					strcpy(valid, list[2]);
+					strcpy(lat, list[3]);
+					strcpy(northsouth, list[4]);
+					strcpy(lon, list[5]);
+					strcpy(eastwest, list[6]);
+					strcpy(spd, list[7]);
+					strcpy(date, list[9]);
+
+					/* free list */
+					for(i = 0; i < len; ++i)
+						free(list[i]);
+					free(list);
+
 				}
+				match = 0;
 
-				/* free list */
-				for(i = 0; i < len; ++i)
-					free(list[i]);
-				free(list);
+				match = strstr (rx_buffer,"GPGGA");
+				if(match){
+					char **list;
+					size_t i, len;
+					datatowrite++;
+					explode(rx_buffer, ",", &list, &len);
 
+					//0      1          2         3 4          5 6 7  8   9   10 11  12
+					//$GPGGA,234444.000,5127.8942,N,00528.6027,E,1,06,1.8,48.7,M,0.0,M,,*53
+
+					strcpy(numsat, list[7]);
+					strcpy(hdop, list[8]);
+					strcpy(alt, list[9]);
+
+					/* free list */
+					for(i = 0; i < len; ++i)
+						free(list[i]);
+					free(list);
+				}
+				match = 0;
+
+				if(datatowrite>1){
+					if(!strcmp(valid,posfix)){
+						fp = fopen ("file.txt", "a");
+						printf("DTG:%s/%sZ*POS:%s%s %s%s*SPD:%s*ALT:%s*HDOP:%s*Sats:%s\n",date, time, lat, northsouth, lon, eastwest, spd, alt, hdop, numsat);
+						fprintf(fp,"%s;%s;%s;%s;%s;%s;%s;%s;%s;%s\r\n",date, time, lat, northsouth, lon, eastwest, spd, alt, hdop, numsat);
+						fclose(fp);
+					} else{
+						printf("POSITION INVALID\n");
+					}
+				datatowrite=0;
+				}
 			}
 		}
-	}
 	}
 	//----- CLOSE THE UART -----
 	close(uart0_filestream);
